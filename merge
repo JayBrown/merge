@@ -1,7 +1,7 @@
 #!/bin/zsh
 # shellcheck shell=bash
 
-# merge v0.1.1
+# merge v0.1.2
 
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 export SYSTEM_VERSION_COMPAT=0
@@ -231,13 +231,19 @@ if $mergedown ; then
 		do
 			finalfiles=$(find "$finaldir" -mindepth 1 -type f -print -quit 2>/dev/null)
 			if ! [[ $finalfiles ]] ; then
-				volfinal=$(df "$finaldir" | tail -1 | awk '{print $NF}')
-				if [[ $volfinal == "$voltrash" ]] ; then
+				volfinal=$(df "$finaldir" 2>/dev/null | tail -1 2>/dev/null | awk '{print $NF}' 2>/dev/null)
+				if [[ $volfinal ]] ; then
+					if [[ $volfinal == "$voltrash" ]] ; then
+						! [[ -d "$HOMEDIR/.Trash/folders $currentposix" ]] && mkdir "$HOMEDIR/.Trash/folders $currentposix" 2>/dev/null
+						finaldirbase=$(basename "$finaldir")
+						mv -f "$finaldir" "$HOMEDIR/.Trash/folders $currentposix/$finaldirbase" 2>/dev/null
+					else
+						echo "Different volume - not moving to trash: $finaldir" >&2
+					fi
+				else
 					! [[ -d "$HOMEDIR/.Trash/folders $currentposix" ]] && mkdir "$HOMEDIR/.Trash/folders $currentposix" 2>/dev/null
 					finaldirbase=$(basename "$finaldir")
 					mv -f "$finaldir" "$HOMEDIR/.Trash/folders $currentposix/$finaldirbase" 2>/dev/null
-				else
-					echo "Different volume - not moving to trash: $finaldir" >&2
 				fi
 			fi
 		done < <(echo "$dirlist")
