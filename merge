@@ -1,7 +1,7 @@
 #!/bin/zsh
 # shellcheck shell=bash
 
-# merge v0.1.3
+# merge v0.1.4
 
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 export SYSTEM_VERSION_COMPAT=0
@@ -9,6 +9,23 @@ export LANG=en_US.UTF-8
 
 accountname=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ && ! /loginwindow/ { print $3 }')
 HOMEDIR=$(eval echo "~$accountname")
+
+configdir="$HOMEDIR/.config/local.lcars.merge"
+deleteloc="$configdir/deletions"
+if ! [[ -d "$configdir" ]] ; then
+	mkdir -p "$configdir" 2>/dev/null
+	touch "$deleteloc"
+else
+	if ! [[ -f "$deleteloc" ]] ; then
+		touch "$deleteloc"
+	fi
+fi
+deletions=$(grep -v "^$" < "$deleteloc")
+if [[ $deletions ]] ; then
+	rmfiles=true
+else
+	rmfiles=false
+fi
 
 if [[ $1 == "-d" ]] || [[ $1 == "--down" ]] ; then
 	mergedown=true
@@ -144,11 +161,35 @@ if $mergedown ; then
 			exit 1
 		fi
 	fi
+	if $rmfiles ; then
+		suffixes=$(echo "$deletions" | grep "^\*\." 2>/dev/null)
+		if [[ $suffixes ]] ; then
+			checkext=true
+		else
+			checkext=false
+		fi
+	else
+		checkext=false
+	fi
 	mverror=false
 	while read -r sourcefile
 	do
 		sourcebase=$(basename "$sourcefile")
 		sourceparent=$(dirname "$sourcefile")
+		if $rmfiles ; then
+			if echo "$deletions" | grep -q "^$sourcebase$" &>/dev/null ; then
+				rm -f "$sourcefile" &>/dev/null && continue
+			fi
+			if $checkext ; then
+				suffix="${sourcebase##*.}"
+				extension=$(echo "$suffix" | tr '[:upper:]' '[:lower:]')
+				if [[ $extension ]] ; then
+					if echo "$suffixes" | grep -q "^\*\.$extension$" &>/dev/null ; then
+						rm -f "$sourcefile" &>/dev/null && continue
+					fi
+				fi
+			fi
+		fi	
 		if [[ $sourceparent != "$targetdir" ]] ; then
 			if ! [[ -e "$targetdir/$sourcebase" ]] ; then
 				if ! mv -f "$sourcefile" "$targetdir/$sourcebase" &>/dev/null ; then
@@ -190,7 +231,7 @@ if $mergedown ; then
 						mverror=true
 					fi
 				fi
-			fi
+			fi				
 		fi
 	done < <(echo "$allfiles")
 	voltrash=$(df "$HOMEDIR/.Trash" | tail -1 | awk '{print $NF}')
