@@ -1,7 +1,7 @@
 #!/bin/zsh
 # shellcheck shell=bash
 
-# merge v0.1
+# merge v0.1.1
 
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 export SYSTEM_VERSION_COMPAT=0
@@ -183,6 +183,11 @@ if $mergedown ; then
 								mverror=true
 							fi
 						fi
+					fi
+				else
+					if ! rm -f "$sourcefile" &>/dev/null ; then
+						echo "rm error: could not delete duplicate: $sourcefile"
+						mverror=true
 					fi
 				fi
 			fi
