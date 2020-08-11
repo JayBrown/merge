@@ -1,7 +1,7 @@
 #!/bin/zsh
 # shellcheck shell=bash
 
-# merge v0.1.2
+# merge v0.1.3
 
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 export SYSTEM_VERSION_COMPAT=0
@@ -169,7 +169,7 @@ if $mergedown ; then
 				sourcehash=$(crc32 "$sourcefile")
 				targethash=$(crc32 "$targetdir/$sourcebase")
 				if [[ $sourcehash != "$targethash" ]] ; then
-					mkdir "$targetdir/$sourcebase $sourcehash"
+					mkdir "$targetdir/$sourcebase $sourcehash" 2>/dev/null
 					if ! mv -f "$sourcefile" "$targetdir/$sourcebase $sourcehash/$sourcebase" &>/dev/null ; then
 						volsource=$(df "$sourcefile" | tail -1 | awk '{print $NF}')
 						voltarget=$(df "$targetdir" | tail -1 | awk '{print $NF}')
@@ -198,13 +198,13 @@ if $mergedown ; then
 		if ! $mverror ; then
 			for filepath in "$@"
 			do
-				if [[ $filepath != "$targetdir" ]] ; then
+				if [[ $filepath != "$targetdir" ]] && [[ -e "$filepath" ]] ; then
 					volsource=$(df "$filepath" | tail -1 | awk '{print $NF}')
 					if [[ $volsource == "$voltrash" ]] ; then
 						sourcebase=$(basename "$filepath")
 						trashloc="$HOMEDIR/.Trash/$sourcebase"
 						if [[ -e "$trashloc" ]] ; then
-							mkdir "$HOMEDIR/.Trash/$currentposix"
+							mkdir "$HOMEDIR/.Trash/$currentposix" 2>/dev/null
 							trashloc="$HOMEDIR/.Trash/$currentposix/$sourcebase"
 						fi
 						if [[ -e "$filepath" ]] ; then
