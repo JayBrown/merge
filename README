@@ -1,0 +1,12 @@
+Merge (or merge down) directories and files into one target directory.
+
+* note: only merge down is currently supported
+* remaining empty folders will be moved to the trash.
+* files with duplicate file names, but different crc32, will be moved into a sub-directoryi n the target location
+* user's home directory will be used as a target, if source file's parents are in different locations
+
+Merge down single directory:
+merge -d foo
+
+Merge down several directories or files into one target directory:
+merge -d foo bar baz

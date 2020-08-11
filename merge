@@ -1,0 +1,244 @@
+#!/bin/zsh
+# shellcheck shell=bash
+
+# merge v0.1
+
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export SYSTEM_VERSION_COMPAT=0
+export LANG=en_US.UTF-8
+
+accountname=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ && ! /loginwindow/ { print $3 }')
+HOMEDIR=$(eval echo "~$accountname")
+
+if [[ $1 == "-d" ]] || [[ $1 == "--down" ]] ; then
+	mergedown=true
+	shift
+else
+	mergedown=false
+	echo "Note: merge with tree retention not yet supported!" >&2 ###
+	exit 1 ###
+fi
+
+if [[ $# -eq 1 ]] ; then
+	if ! [[ -d $* ]] ; then
+		echo "merge will not work with single non-directory files!" >&2
+		exit 1
+	else
+		if ! $mergedown ; then
+			echo "Error: single directory file! Nothing to merge!" >&2
+			exit 1
+		else
+			filepath="$*"
+			if ! [[ -w "$filepath" ]] ; then
+				echo "Error: directory not writable!" >&2
+				exit 1
+			fi
+			allregular=false
+			single=true
+			targetdir="$filepath"
+			dirlist=$(find "$targetdir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+			if ! [[ $dirlist ]] ; then
+				echo "Error: no subdirectories! Nothing to merge down!" >&2
+				exit 1
+			fi
+		fi
+	fi
+else
+	single=false
+	dircount=0
+	parentlist=""
+	for filepath in "$@"
+	do
+		if ! [[ -w "$filepath" ]] ; then
+			echo "Error: at least one file not writable!" >&2
+			exit 1
+		fi
+		if [[ -d "$filepath" ]] ; then
+			((dircount++))
+			targetdir="$filepath"
+		fi
+		masterparent=$(dirname "$filepath")
+		if [[ $parentlist ]] ; then
+			parentlist="$parentlist\n$masterparent"
+		else
+			parentlist="$masterparent"
+		fi
+	done
+	parentlist=$(echo -e "$parentlist" | sort | awk '!a[$0]++')
+	if [[ $(echo "$parentlist" | wc -l) -gt 1 ]] ; then
+		targethome=true
+	else
+		targethome=false
+	fi
+	if [[ $dircount -eq 0 ]] ; then
+		allregular=true
+		if $targethome ; then
+			targetdir="$HOMEDIR/merged folder"
+		else
+			parent=$(dirname "$filepath")
+			if ! [[ -w "$parent" ]] ; then
+				targetdir="$HOMEDIR/merged folder"
+			else
+				targetdir="$parent/merged folder"
+			fi
+		fi
+	else
+		allregular=false
+		if [[ $dircount -gt 1 ]] ; then
+			if $targethome ; then
+				targetdir="$HOMEDIR/merged folder"
+			else
+				parent=$(dirname "$filepath")
+				if ! [[ -w "$parent" ]] ; then
+					targetdir="$HOMEDIR/merged folder"
+				else
+					targetdir="$parent/merged folder"
+				fi
+			fi
+		fi
+	fi
+fi
+
+currentposix=$(date +%s)
+if [[ $(basename "$targetdir") == "merged folder" ]] && [[ -d "$targetdir" ]] ; then
+	targetdir="$targetdir $currentposix"
+fi
+
+if $mergedown ; then
+	if $single ; then
+		allfiles=$(find "$filepath" -mindepth 1 -type f 2>/dev/null | sort)
+		while read -r sourcefile
+		do
+			if ! [[ -w "$sourcefile" ]] ; then
+				echo "Error: at least one file is not writable!" >&2
+				exit 1
+			fi
+		done < <(echo "$allfiles")
+	else
+		allfiles=""
+		for filepath in "$@"
+		do
+			if [[ -d "$filepath" ]] ; then
+				partialfiles=$(find "$filepath" -mindepth 1 -type f 2>/dev/null)
+			else
+				partialfiles="$filepath"
+			fi
+			if [[ $allfiles ]] ; then
+				allfiles="$allfiles\n$partialfiles"
+			else
+				allfiles="$partialfiles"
+			fi
+		done
+		allfiles=$(echo -e "$allfiles" | sort)
+		while read -r sourcefile
+		do
+			if ! [[ -w "$sourcefile" ]] ; then
+				echo "Error: at least one file is not writable!" >&2
+				exit 1
+			fi
+		done < <(echo "$allfiles")
+	fi
+	if ! [[ -d "$targetdir" ]] ; then
+		if ! mkdir "$targetdir" &>/dev/null ; then
+			echo "Error creating target directory!" >&2
+			exit 1
+		fi
+	fi
+	mverror=false
+	while read -r sourcefile
+	do
+		sourcebase=$(basename "$sourcefile")
+		sourceparent=$(dirname "$sourcefile")
+		if [[ $sourceparent != "$targetdir" ]] ; then
+			if ! [[ -e "$targetdir/$sourcebase" ]] ; then
+				if ! mv -f "$sourcefile" "$targetdir/$sourcebase" &>/dev/null ; then
+					volsource=$(df "$sourcefile" | tail -1 | awk '{print $NF}')
+					voltarget=$(df "$targetdir" | tail -1 | awk '{print $NF}')
+					if [[ $volsource == "$voltarget" ]] ; then
+						echo "mv error: $sourcefile" >&2
+						mverror=true
+					else
+						echo "mv error & different volume - trying to copy instead: $sourcefile"
+						if ! cp -f "$sourcefile" "$targetdir/$sourcebase" &>/dev/null ; then
+							echo "cp error: $sourcefile" >&2
+							mverror=true
+						fi
+					fi
+				fi
+			else
+				sourcehash=$(crc32 "$sourcefile")
+				targethash=$(crc32 "$targetdir/$sourcebase")
+				if [[ $sourcehash != "$targethash" ]] ; then
+					mkdir "$targetdir/$sourcebase $sourcehash"
+					if ! mv -f "$sourcefile" "$targetdir/$sourcebase $sourcehash/$sourcebase" &>/dev/null ; then
+						volsource=$(df "$sourcefile" | tail -1 | awk '{print $NF}')
+						voltarget=$(df "$targetdir" | tail -1 | awk '{print $NF}')
+						if [[ $volsource == "$voltarget" ]] ; then
+							echo "mv error: $sourcefile" >&2
+							mverror=true
+						else
+							echo "mv error & different volume - trying to copy instead: $sourcefile"
+							if ! cp -f "$sourcefile" "$targetdir/$sourcebase" &>/dev/null ; then
+								echo "cp error: $sourcefile" >&2
+								mverror=true
+							fi
+						fi
+					fi
+				fi
+			fi
+		fi
+	done < <(echo "$allfiles")
+	voltrash=$(df "$HOMEDIR/.Trash" | tail -1 | awk '{print $NF}')
+	if ! $single ; then
+		if ! $mverror ; then
+			for filepath in "$@"
+			do
+				if [[ $filepath != "$targetdir" ]] ; then
+					volsource=$(df "$filepath" | tail -1 | awk '{print $NF}')
+					if [[ $volsource == "$voltrash" ]] ; then
+						sourcebase=$(basename "$filepath")
+						trashloc="$HOMEDIR/.Trash/$sourcebase"
+						if [[ -e "$trashloc" ]] ; then
+							mkdir "$HOMEDIR/.Trash/$currentposix"
+							trashloc="$HOMEDIR/.Trash/$currentposix/$sourcebase"
+						fi
+						if [[ -e "$filepath" ]] ; then
+							if ! mv -f "$filepath" "$trashloc" &>/dev/null ; then
+								echo "Error moving source to trash: $filepath"
+							fi
+						fi
+					else
+						echo "Different volume - not moving to trash: $filepath" >&2
+					fi
+				fi
+			done
+		else
+			echo "Errors encountered: will not move sources to trash!" >&2
+		fi
+	else
+		if $mverror ; then
+			echo "Errors encountered!" >&2
+		fi
+	fi
+	dirlist=$(find "$targetdir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+	if [[ $dirlist ]] ; then
+		while read -r finaldir
+		do
+			finalfiles=$(find "$finaldir" -mindepth 1 -type f -print -quit 2>/dev/null)
+			if ! [[ $finalfiles ]] ; then
+				volfinal=$(df "$finaldir" | tail -1 | awk '{print $NF}')
+				if [[ $volfinal == "$voltrash" ]] ; then
+					! [[ -d "$HOMEDIR/.Trash/folders $currentposix" ]] && mkdir "$HOMEDIR/.Trash/folders $currentposix" 2>/dev/null
+					finaldirbase=$(basename "$finaldir")
+					mv -f "$finaldir" "$HOMEDIR/.Trash/folders $currentposix/$finaldirbase" 2>/dev/null
+				else
+					echo "Different volume - not moving to trash: $finaldir" >&2
+				fi
+			fi
+		done < <(echo "$dirlist")
+	fi
+else
+	echo "tree retention" ###
+fi
+
+exit
